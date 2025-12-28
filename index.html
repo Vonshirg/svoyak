@@ -173,6 +173,33 @@ audio::-webkit-media-controls-panel {
   border-radius: 10px;
 }
 
+/* Кнопки для заставки */
+.intro-controls {
+  margin: 20px 0;
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+}
+
+.intro-controls button {
+  font-size: 20px;
+  padding: 10px 25px;
+  cursor: pointer;
+  border-radius: 5px;
+  border: none;
+  min-width: 200px;
+}
+
+#playIntroBtn {
+  background: #22b455;
+  color: white;
+}
+
+#pauseIntroBtn {
+  background: #cc3b3b;
+  color: white;
+}
+
 /* ===== CAT IN THE BAG ===== */
 #catScreen{
   animation:flash 1.2s infinite alternate;
@@ -247,10 +274,10 @@ audio::-webkit-media-controls-panel {
   <div class="close" onclick="closeIntro()">✖</div>
   <div class="intro-content">
     <img src="media/Intro.jpg" style="max-width:90%;margin-bottom:20px;border-radius:12px">
-    <audio id="introAudio" controls>
-      <source src="media/intro.mp3" type="audio/mpeg">
-      Ваш браузер не поддерживает аудио элемент.
-    </audio>
+    <div class="intro-controls">
+      <button id="playIntroBtn" onclick="playIntroAudio()">▶ Воспроизвести заставку</button>
+      <button id="pauseIntroBtn" onclick="pauseIntroAudio()" style="display:none">⏸ Остановить</button>
+    </div>
   </div>
 </div>
 
@@ -329,7 +356,8 @@ let scores = [0, 0, 0, 0];
 let pendingQuestion = null;
 let currentPrice = 0;
 let playerNames = ["Игрок 1", "Игрок 2", "Игрок 3", "Игрок 4"];
-let currentAudio = null;
+let currentAudio = null; // Для кота и заставки
+let introAudio = null; // Отдельно для заставки
 
 // Загрузка данных и инициализация
 fetch('./questions.json').then(r => r.json()).then(j => {
@@ -533,7 +561,7 @@ function openQuestion(q) {
         imageManager.observeImage(img);
       });
     } else if (q.media.type === 'audio') {
-      // Используем стандартный HTML5 аудио плеер
+      // Используем стандартный HTML5 аудио плеер для вопросов
       mediaBox.innerHTML = `
         <audio controls>
           <source src="${q.media.src}" type="audio/mpeg">
@@ -558,6 +586,12 @@ function showAnswer() {
     currentAudio.currentTime = 0;
     currentAudio = null;
   }
+  
+  // Также останавливаем аудио заставки
+  if (introAudio) {
+    introAudio.pause();
+    introAudio.currentTime = 0;
+  }
 }
 
 function closeQuestion() {
@@ -571,6 +605,12 @@ function closeQuestion() {
     currentAudio.pause();
     currentAudio.currentTime = 0;
     currentAudio = null;
+  }
+  
+  // Также останавливаем аудио заставки
+  if (introAudio) {
+    introAudio.pause();
+    introAudio.currentTime = 0;
   }
   
   document.getElementById('questionModal').style.display = 'none';
@@ -589,20 +629,73 @@ function closeSponsor() {
 function showIntro() {
   document.getElementById('introModal').style.display = 'flex';
   
-  // Сбрасываем аудио заставки
-  const introAudio = document.getElementById('introAudio');
+  // Сбрасываем состояние кнопок
+  document.getElementById('playIntroBtn').style.display = 'block';
+  document.getElementById('pauseIntroBtn').style.display = 'none';
+  
+  // Останавливаем любое текущее аудио
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+  }
+}
+
+function playIntroAudio() {
+  try {
+    // Создаем новое аудио через new Audio(), как для кота
+    introAudio = new Audio('media/intro.mp3');
+    
+    // Настраиваем обработчики событий
+    introAudio.oncanplay = () => {
+      console.log('Аудио заставки готово к воспроизведению');
+    };
+    
+    introAudio.onerror = (e) => {
+      console.error('Ошибка загрузки аудио заставки:', e);
+      alert('Не удалось загрузить аудио заставки. Проверьте консоль для подробностей.');
+    };
+    
+    introAudio.onended = () => {
+      // Когда аудио закончилось, показываем кнопку воспроизведения
+      document.getElementById('playIntroBtn').style.display = 'block';
+      document.getElementById('pauseIntroBtn').style.display = 'none';
+      introAudio = null; // Освобождаем ресурсы
+    };
+    
+    // Пытаемся воспроизвести
+    introAudio.play()
+      .then(() => {
+        console.log('Аудио заставки воспроизводится');
+        // Меняем кнопки
+        document.getElementById('playIntroBtn').style.display = 'none';
+        document.getElementById('pauseIntroBtn').style.display = 'block';
+      })
+      .catch(error => {
+        console.warn('Автовоспроизведение заблокировано браузером:', error);
+        // Информируем пользователя
+        alert('Нажмите "Воспроизвести заставку" еще раз для запуска аудио. Браузер требует взаимодействия с пользователем.');
+      });
+      
+  } catch (error) {
+    console.error('Ошибка создания аудио элемента:', error);
+    alert('Ошибка создания аудио элемента. Проверьте консоль для подробностей.');
+  }
+}
+
+function pauseIntroAudio() {
   if (introAudio) {
     introAudio.pause();
-    introAudio.currentTime = 0;
+    document.getElementById('playIntroBtn').style.display = 'block';
+    document.getElementById('pauseIntroBtn').style.display = 'none';
   }
 }
 
 function closeIntro() {
   // Останавливаем аудио заставки
-  const introAudio = document.getElementById('introAudio');
   if (introAudio) {
     introAudio.pause();
     introAudio.currentTime = 0;
+    introAudio = null;
   }
   
   document.getElementById('introModal').style.display = 'none';
@@ -618,6 +711,11 @@ window.addEventListener('beforeunload', () => {
   if (currentAudio) {
     currentAudio.pause();
     currentAudio.currentTime = 0;
+  }
+  
+  if (introAudio) {
+    introAudio.pause();
+    introAudio.currentTime = 0;
   }
 });
 </script>
