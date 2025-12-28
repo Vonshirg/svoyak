@@ -162,29 +162,15 @@ body {
   object-fit: contain;
 }
 
-/* Аудио плеер */
-.custom-audio-player {
+/* Стандартный аудио плеер */
+audio {
   margin: 20px 0;
-  display: flex;
-  align-items: center;
-  gap: 15px;
+  max-width: 500px;
+}
+
+audio::-webkit-media-controls-panel {
   background: rgba(0, 0, 0, 0.3);
-  padding: 15px;
   border-radius: 10px;
-}
-
-.custom-audio-player button {
-  background: #2345a5;
-  color: white;
-  border: none;
-  padding: 10px 20px;
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 16px;
-}
-
-.custom-audio-player button:hover {
-  background: #2a52c5;
 }
 
 /* ===== CAT IN THE BAG ===== */
@@ -214,6 +200,13 @@ body {
 @keyframes loading {
   0% { background-position: -200px 0; }
   100% { background-position: 200px 0; }
+}
+
+/* Заставка */
+.intro-content {
+  text-align: center;
+  max-width: 100%;
+  padding: 20px;
 }
 </style>
 </head>
@@ -252,121 +245,16 @@ body {
 <!-- INTRO -->
 <div id="introModal" class="modal">
   <div class="close" onclick="closeIntro()">✖</div>
-  <img src="media/Intro.png" style="max-width:90%;margin-bottom:20px">
+  <div class="intro-content">
+    <img src="media/Intro.jpg" style="max-width:90%;margin-bottom:20px;border-radius:12px">
+    <audio id="introAudio" controls>
+      <source src="media/intro.mp3" type="audio/mpeg">
+      Ваш браузер не поддерживает аудио элемент.
+    </audio>
+  </div>
 </div>
 
 <script>
-// ===== АУДИО МЕНЕДЖЕР =====
-class AudioManager {
-  constructor() {
-    this.audioCache = new Map(); // Кеш аудио объектов
-    this.audioPromises = new Map(); // Промисы загрузки
-    this.preloadedAudios = new Set(); // Предзагруженные аудио
-    this.activeAudio = null;
-  }
-
-  // Ленивая загрузка аудио
-  async loadAudio(src) {
-    // Если уже в кеше, возвращаем
-    if (this.audioCache.has(src)) {
-      return this.audioCache.get(src);
-    }
-
-    // Если уже загружается, возвращаем промис
-    if (this.audioPromises.has(src)) {
-      return this.audioPromises.get(src);
-    }
-
-    // Создаем новый промис загрузки
-    const loadPromise = new Promise((resolve, reject) => {
-      const audio = new Audio();
-      
-      // Устанавливаем preload для оптимизации
-      audio.preload = 'metadata';
-      
-      audio.addEventListener('canplaythrough', () => {
-        this.audioCache.set(src, audio);
-        this.audioPromises.delete(src);
-        resolve(audio);
-      }, { once: true });
-      
-      audio.addEventListener('error', (e) => {
-        this.audioPromises.delete(src);
-        reject(new Error(`Не удалось загрузить аудио: ${src}`));
-      }, { once: true });
-      
-      audio.src = src;
-      
-      // Загружаем метаданные
-      audio.load();
-    });
-
-    this.audioPromises.set(src, loadPromise);
-    return loadPromise;
-  }
-
-  // Предзагрузка критичных аудио
-  preloadCriticalAudios() {
-    const criticalAudios = [
-      'media/cat.mp3',
-      'media/intro.mp3'
-    ];
-    
-    criticalAudios.forEach(src => {
-      if (!this.preloadedAudios.has(src)) {
-        this.loadAudio(src).then(() => {
-          this.preloadedAudios.add(src);
-        }).catch(console.error);
-      }
-    });
-  }
-
-  // Воспроизведение аудио
-  async playAudio(src, autoplay = true) {
-    // Останавливаем текущее аудио
-    if (this.activeAudio) {
-      this.activeAudio.pause();
-      this.activeAudio.currentTime = 0;
-    }
-
-    try {
-      const audio = await this.loadAudio(src);
-      this.activeAudio = audio;
-      
-      if (autoplay) {
-        await audio.play();
-      }
-      
-      return audio;
-    } catch (error) {
-      console.error('Ошибка воспроизведения:', error);
-      return null;
-    }
-  }
-
-  // Остановка аудио
-  stopAudio() {
-    if (this.activeAudio) {
-      this.activeAudio.pause();
-      this.activeAudio.currentTime = 0;
-      this.activeAudio = null;
-    }
-  }
-
-  // Освобождение ресурсов
-  cleanup() {
-    this.stopAudio();
-    // Очищаем кеш от неиспользуемых аудио
-    this.audioCache.forEach((audio, src) => {
-      if (!this.preloadedAudios.has(src)) {
-        audio.pause();
-        audio.src = '';
-        this.audioCache.delete(src);
-      }
-    });
-  }
-}
-
 // ===== МЕНЕДЖЕР ИЗОБРАЖЕНИЙ =====
 class ImageManager {
   constructor() {
@@ -434,7 +322,6 @@ class ImageManager {
 }
 
 // ===== ОСНОВНОЙ КОД =====
-const audioManager = new AudioManager();
 const imageManager = new ImageManager();
 
 let data;
@@ -442,7 +329,7 @@ let scores = [0, 0, 0, 0];
 let pendingQuestion = null;
 let currentPrice = 0;
 let playerNames = ["Игрок 1", "Игрок 2", "Игрок 3", "Игрок 4"];
-let introAudioPromise = null;
+let currentAudio = null;
 
 // Загрузка данных и инициализация
 fetch('./questions.json').then(r => r.json()).then(j => {
@@ -452,16 +339,15 @@ fetch('./questions.json').then(r => r.json()).then(j => {
   
   // Предзагрузка критичных медиа
   preloadCriticalMedia();
-  audioManager.preloadCriticalAudios();
 });
 
 function preloadCriticalMedia() {
   const mediaToPreload = {
     images: new Set(),
-    audios: new Set()
+    audios: new Set(['media/cat.mp3', 'media/intro.mp3'])
   };
   
-  // Собираем медиа для предзагрузки (первые 2 вопроса из каждой темы)
+  // Собираем медиа для предзагрузки
   data.themes.forEach(theme => {
     theme.questions.slice(0, 2).forEach(q => {
       if (q.media) {
@@ -478,13 +364,6 @@ function preloadCriticalMedia() {
   
   // Предзагружаем изображения
   imageManager.preloadImages(Array.from(mediaToPreload.images));
-  
-  // Предзагружаем аудио (лениво, только метаданные)
-  mediaToPreload.audios.forEach(src => {
-    audioManager.loadAudio(src).catch(() => {
-      // Игнорируем ошибки предзагрузки
-    });
-  });
 }
 
 function renderBoard() {
@@ -542,8 +421,6 @@ function lazyPreloadNeighbors(themeIndex, questionIndex) {
       question.media.src.slice(0, 2).forEach(src => {
         imageManager.loadImageWithCache(src).catch(() => {});
       });
-    } else if (question.media.type === 'audio') {
-      audioManager.loadAudio(question.media.src).catch(() => {});
     }
   });
 }
@@ -590,8 +467,17 @@ function selectQuestion(cell, q) {
 
   if (Math.random() < 0.15) {
     pendingQuestion = q;
-    // Воспроизводим cat.mp3 через аудио менеджер
-    audioManager.playAudio('media/cat.mp3').then(() => {
+    
+    // Создаем и воспроизводим аудио для кота
+    if (currentAudio) {
+      currentAudio.pause();
+      currentAudio.currentTime = 0;
+    }
+    
+    currentAudio = new Audio('media/cat.mp3');
+    currentAudio.play().then(() => {
+      document.getElementById('catScreen').style.display = 'flex';
+    }).catch(() => {
       document.getElementById('catScreen').style.display = 'flex';
     });
   } else {
@@ -600,7 +486,13 @@ function selectQuestion(cell, q) {
 }
 
 function continueCat() {
-  audioManager.stopAudio();
+  // Останавливаем аудио кота
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    currentAudio = null;
+  }
+  
   document.getElementById('catScreen').style.display = 'none';
   
   if (pendingQuestion) {
@@ -609,7 +501,7 @@ function continueCat() {
   }
 }
 
-async function openQuestion(q) {
+function openQuestion(q) {
   document.getElementById('questionText').textContent = q.question;
   document.getElementById('answerText').textContent = q.answer;
   document.getElementById('answerText').style.display = 'none';
@@ -637,49 +529,51 @@ async function openQuestion(q) {
       
       mediaBox.innerHTML = `<div class="media-images">${imagesHTML}</div>`;
       
-      // Начинаем загрузку всех изображений
       mediaBox.querySelectorAll('img').forEach(img => {
         imageManager.observeImage(img);
       });
     } else if (q.media.type === 'audio') {
+      // Используем стандартный HTML5 аудио плеер
       mediaBox.innerHTML = `
-        <div class="custom-audio-player">
-          <button onclick="playQuestionAudio()">▶ Воспроизвести</button>
-          <button onclick="pauseQuestionAudio()">⏸ Пауза</button>
-        </div>`;
-      
-      // Лениво загружаем аудио
-      window.currentQuestionAudio = q.media.src;
+        <audio controls>
+          <source src="${q.media.src}" type="audio/mpeg">
+          Ваш браузер не поддерживает аудио элемент.
+        </audio>`;
     }
   }
 
   document.getElementById('questionModal').style.display = 'flex';
 }
 
-// Глобальные функции для управления аудио вопроса
-async function playQuestionAudio() {
-  if (window.currentQuestionAudio) {
-    const audio = await audioManager.playAudio(window.currentQuestionAudio, false);
-    if (audio) {
-      audio.play().catch(e => console.error('Ошибка воспроизведения:', e));
-    }
+function showAnswer() {
+  document.getElementById('answerText').style.display = 'block';
+  // Останавливаем все аудио при показе ответа
+  const audioElements = document.querySelectorAll('audio');
+  audioElements.forEach(audio => {
+    audio.pause();
+  });
+  
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    currentAudio = null;
   }
 }
 
-function pauseQuestionAudio() {
-  audioManager.stopAudio();
-}
-
-function showAnswer() {
-  document.getElementById('answerText').style.display = 'block';
-  // Останавливаем аудио при показе ответа
-  audioManager.stopAudio();
-}
-
 function closeQuestion() {
-  audioManager.stopAudio();
+  // Останавливаем все аудио при закрытии вопроса
+  const audioElements = document.querySelectorAll('audio');
+  audioElements.forEach(audio => {
+    audio.pause();
+  });
+  
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    currentAudio = null;
+  }
+  
   document.getElementById('questionModal').style.display = 'none';
-  window.currentQuestionAudio = null;
 }
 
 /* SPONSOR */
@@ -692,31 +586,40 @@ function closeSponsor() {
 }
 
 /* INTRO */
-async function showIntro() {
+function showIntro() {
   document.getElementById('introModal').style.display = 'flex';
   
-  // Ленивая загрузка и воспроизведение intro.mp3
-  try {
-    await audioManager.playAudio('media/intro.mp3');
-  } catch (error) {
-    console.warn('Не удалось воспроизвести интро:', error);
+  // Сбрасываем аудио заставки
+  const introAudio = document.getElementById('introAudio');
+  if (introAudio) {
+    introAudio.pause();
+    introAudio.currentTime = 0;
   }
 }
 
 function closeIntro() {
-  audioManager.stopAudio();
+  // Останавливаем аудио заставки
+  const introAudio = document.getElementById('introAudio');
+  if (introAudio) {
+    introAudio.pause();
+    introAudio.currentTime = 0;
+  }
+  
   document.getElementById('introModal').style.display = 'none';
 }
 
-// Очистка при закрытии страницы
+// Останавливаем все аудио при закрытии страницы
 window.addEventListener('beforeunload', () => {
-  audioManager.cleanup();
+  const audioElements = document.querySelectorAll('audio');
+  audioElements.forEach(audio => {
+    audio.pause();
+  });
+  
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+  }
 });
-
-// Предзагрузка при первом взаимодействии
-document.addEventListener('click', () => {
-  audioManager.preloadCriticalAudios();
-}, { once: true });
 </script>
 
 </body>
