@@ -112,41 +112,41 @@
         { "price": 100, "question": "Что общего у картинок?", "answer": "Окна", "media": {
   "type": "images",
   "src": [
-      "media/картинки/Окна (2).jpg",
-      "media/картинки/Окна.jpg",
-      "media/картинки/Окна2.jpeg"
+      "media/картинки/Окна (2).webp",
+      "media/картинки/Окна.webp",
+      "media/картинки/Окна2.webp"
     ]
 } },
         { "price": 200, "question": "Что общего у картинок?", "answer": "Дорожка", "media": {
   "type": "images",
   "src": [
-      "media/картинки/Дорожка2.jpg",
-      "media/картинки/Дорожка.jpg",
-      "media/картинки/Дорожка (2).jpg"
+      "media/картинки/Дорожка2.webp",
+      "media/картинки/Дорожка.webp",
+      "media/картинки/Дорожка (2).webp"
     ]
 } },
         { "price": 300, "question": "Что общего у картинок?", "answer": "Деньги", "media": {
   "type": "images",
   "src": [
-      "media/картинки/Деньги.jpg",
-      "media/картинки/Деньги (2).jpg",
-      "media/картинки/Деньги (3).jpg"
+      "media/картинки/Деньги.webp",
+      "media/картинки/Деньги (2).webp",
+      "media/картинки/Деньги (3).webp"
     ]
 } },
         { "price": 400, "question": "Что общего у картинок?", "answer": "Ключ", "media": {
   "type": "images",
   "src": [
-      "media/картинки/Ключ.jpg",
-      "media/картинки/Ключ2.jpg",
-      "media/картинки/Ключ (2).jpg"
+      "media/картинки/Ключ.webp",
+      "media/картинки/Ключ2.webp",
+      "media/картинки/Ключ (2).webp"
     ]
 } },
         { "price": 500, "question": "Что общего у картинок?", "answer": "Форма", "media": {
   "type": "images",
   "src": [
-      "media/картинки/Форма.jpg",
-      "media/картинки/Форма.jpeg",
-      "media/картинки/Форма2.jpg"
+      "media/картинки/Форма3.webp",
+      "media/картинки/Форма.webp",
+      "media/картинки/Форма2.webp"
     ]
 } }
       ]

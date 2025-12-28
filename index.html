@@ -151,12 +151,40 @@ body {
   max-width: 800px;
   max-height: 800px;
   border-radius: 12px;
+  background: linear-gradient(90deg, #13235c 0%, #2345a5 50%, #13235c 100%);
+  background-size: 200% 100%;
 }
 
 .media-images img {
   max-width: 500px;
   max-height: 500px;
   border-radius: 12px;
+  object-fit: contain;
+}
+
+/* Аудио плеер */
+.custom-audio-player {
+  margin: 20px 0;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 15px;
+  border-radius: 10px;
+}
+
+.custom-audio-player button {
+  background: #2345a5;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.custom-audio-player button:hover {
+  background: #2a52c5;
 }
 
 /* ===== CAT IN THE BAG ===== */
@@ -176,6 +204,16 @@ body {
 @keyframes flash{
   from{background:#0a123a}
   to{background:#1e3cff}
+}
+
+/* Loading animation */
+.loading {
+  animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+  0% { background-position: -200px 0; }
+  100% { background-position: 200px 0; }
 }
 </style>
 </head>
@@ -218,53 +256,303 @@ body {
 </div>
 
 <script>
-let data;
-let scores=[0,0,0,0];
-let activeMedia=null;
-let pendingQuestion=null;
-let introAudio=null;
+// ===== АУДИО МЕНЕДЖЕР =====
+class AudioManager {
+  constructor() {
+    this.audioCache = new Map(); // Кеш аудио объектов
+    this.audioPromises = new Map(); // Промисы загрузки
+    this.preloadedAudios = new Set(); // Предзагруженные аудио
+    this.activeAudio = null;
+  }
 
-fetch('./questions.json').then(r=>r.json()).then(j=>{
-  data=j;
+  // Ленивая загрузка аудио
+  async loadAudio(src) {
+    // Если уже в кеше, возвращаем
+    if (this.audioCache.has(src)) {
+      return this.audioCache.get(src);
+    }
+
+    // Если уже загружается, возвращаем промис
+    if (this.audioPromises.has(src)) {
+      return this.audioPromises.get(src);
+    }
+
+    // Создаем новый промис загрузки
+    const loadPromise = new Promise((resolve, reject) => {
+      const audio = new Audio();
+      
+      // Устанавливаем preload для оптимизации
+      audio.preload = 'metadata';
+      
+      audio.addEventListener('canplaythrough', () => {
+        this.audioCache.set(src, audio);
+        this.audioPromises.delete(src);
+        resolve(audio);
+      }, { once: true });
+      
+      audio.addEventListener('error', (e) => {
+        this.audioPromises.delete(src);
+        reject(new Error(`Не удалось загрузить аудио: ${src}`));
+      }, { once: true });
+      
+      audio.src = src;
+      
+      // Загружаем метаданные
+      audio.load();
+    });
+
+    this.audioPromises.set(src, loadPromise);
+    return loadPromise;
+  }
+
+  // Предзагрузка критичных аудио
+  preloadCriticalAudios() {
+    const criticalAudios = [
+      'media/cat.mp3',
+      'media/intro.mp3'
+    ];
+    
+    criticalAudios.forEach(src => {
+      if (!this.preloadedAudios.has(src)) {
+        this.loadAudio(src).then(() => {
+          this.preloadedAudios.add(src);
+        }).catch(console.error);
+      }
+    });
+  }
+
+  // Воспроизведение аудио
+  async playAudio(src, autoplay = true) {
+    // Останавливаем текущее аудио
+    if (this.activeAudio) {
+      this.activeAudio.pause();
+      this.activeAudio.currentTime = 0;
+    }
+
+    try {
+      const audio = await this.loadAudio(src);
+      this.activeAudio = audio;
+      
+      if (autoplay) {
+        await audio.play();
+      }
+      
+      return audio;
+    } catch (error) {
+      console.error('Ошибка воспроизведения:', error);
+      return null;
+    }
+  }
+
+  // Остановка аудио
+  stopAudio() {
+    if (this.activeAudio) {
+      this.activeAudio.pause();
+      this.activeAudio.currentTime = 0;
+      this.activeAudio = null;
+    }
+  }
+
+  // Освобождение ресурсов
+  cleanup() {
+    this.stopAudio();
+    // Очищаем кеш от неиспользуемых аудио
+    this.audioCache.forEach((audio, src) => {
+      if (!this.preloadedAudios.has(src)) {
+        audio.pause();
+        audio.src = '';
+        this.audioCache.delete(src);
+      }
+    });
+  }
+}
+
+// ===== МЕНЕДЖЕР ИЗОБРАЖЕНИЙ =====
+class ImageManager {
+  constructor() {
+    this.imageCache = new Map();
+    this.intersectionObserver = null;
+    this.initObserver();
+  }
+
+  initObserver() {
+    this.intersectionObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const img = entry.target;
+          const src = img.dataset.src;
+          
+          if (src && !img.src.includes(src)) {
+            this.loadImageWithCache(src).then(url => {
+              img.src = url;
+              img.classList.remove('loading');
+            });
+          }
+          
+          this.intersectionObserver.unobserve(img);
+        }
+      });
+    }, {
+      rootMargin: '100px',
+      threshold: 0.1
+    });
+  }
+
+  async loadImageWithCache(src) {
+    if (this.imageCache.has(src)) {
+      return this.imageCache.get(src);
+    }
+
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        this.imageCache.set(src, src);
+        resolve(src);
+      };
+      img.onerror = reject;
+      img.src = src;
+    });
+  }
+
+  preloadImages(urls) {
+    urls.forEach(url => {
+      if (!this.imageCache.has(url)) {
+        const img = new Image();
+        img.onload = () => this.imageCache.set(url, url);
+        img.src = url;
+      }
+    });
+  }
+
+  observeImage(img) {
+    if (this.intersectionObserver && img.dataset.src) {
+      this.intersectionObserver.observe(img);
+    } else if (img.src) {
+      this.loadImageWithCache(img.src);
+    }
+  }
+}
+
+// ===== ОСНОВНОЙ КОД =====
+const audioManager = new AudioManager();
+const imageManager = new ImageManager();
+
+let data;
+let scores = [0, 0, 0, 0];
+let pendingQuestion = null;
+let currentPrice = 0;
+let playerNames = ["Игрок 1", "Игрок 2", "Игрок 3", "Игрок 4"];
+let introAudioPromise = null;
+
+// Загрузка данных и инициализация
+fetch('./questions.json').then(r => r.json()).then(j => {
+  data = j;
   renderBoard();
   renderPlayers();
+  
+  // Предзагрузка критичных медиа
+  preloadCriticalMedia();
+  audioManager.preloadCriticalAudios();
 });
 
-function renderBoard(){
+function preloadCriticalMedia() {
+  const mediaToPreload = {
+    images: new Set(),
+    audios: new Set()
+  };
+  
+  // Собираем медиа для предзагрузки (первые 2 вопроса из каждой темы)
+  data.themes.forEach(theme => {
+    theme.questions.slice(0, 2).forEach(q => {
+      if (q.media) {
+        if (q.media.type === 'image') {
+          mediaToPreload.images.add(q.media.src);
+        } else if (q.media.type === 'images') {
+          q.media.src.slice(0, 2).forEach(src => mediaToPreload.images.add(src));
+        } else if (q.media.type === 'audio') {
+          mediaToPreload.audios.add(q.media.src);
+        }
+      }
+    });
+  });
+  
+  // Предзагружаем изображения
+  imageManager.preloadImages(Array.from(mediaToPreload.images));
+  
+  // Предзагружаем аудио (лениво, только метаданные)
+  mediaToPreload.audios.forEach(src => {
+    audioManager.loadAudio(src).catch(() => {
+      // Игнорируем ошибки предзагрузки
+    });
+  });
+}
+
+function renderBoard() {
   const b = document.getElementById('board');
   b.innerHTML = '';
 
-  data.themes.forEach(theme => {
-
-    // === ЯЧЕЙКА ТЕМЫ (СЛЕВА) ===
+  data.themes.forEach((theme, themeIndex) => {
+    // === ЯЧЕЙКА ТЕМЫ ===
     const themeCell = document.createElement('div');
     themeCell.className = 'cell theme';
     themeCell.textContent = theme.title;
     b.appendChild(themeCell);
 
-    // === ВОПРОСЫ СПРАВА ===
-    theme.questions.forEach(q => {
+    // === ВОПРОСЫ ===
+    theme.questions.forEach((q, questionIndex) => {
       const c = document.createElement('div');
       c.className = 'cell';
       c.textContent = q.price;
+      c.dataset.themeIndex = themeIndex;
+      c.dataset.questionIndex = questionIndex;
 
       c.onclick = () => {
         if (c.classList.contains('used')) return;
+        
+        // Предзагрузка соседних вопросов при клике
+        lazyPreloadNeighbors(themeIndex, questionIndex);
+        
         selectQuestion(c, q);
       };
 
       b.appendChild(c);
     });
-
   });
 }
 
-let playerNames = ["Игрок 1", "Игрок 2", "Игрок 3", "Игрок 4"];
-function renderPlayers(){
-  const p=document.getElementById('players');
-  p.innerHTML='';
+function lazyPreloadNeighbors(themeIndex, questionIndex) {
+  const neighbors = [];
+  
+  // Собираем медиа соседних вопросов
+  for (let t = Math.max(0, themeIndex - 1); t <= Math.min(data.themes.length - 1, themeIndex + 1); t++) {
+    for (let q = Math.max(0, questionIndex - 1); q <= Math.min(data.themes[t].questions.length - 1, questionIndex + 1); q++) {
+      const question = data.themes[t].questions[q];
+      if (question.media && !question._preloaded) {
+        neighbors.push(question);
+        question._preloaded = true;
+      }
+    }
+  }
+  
+  // Ленивая предзагрузка медиа
+  neighbors.forEach(question => {
+    if (question.media.type === 'image') {
+      imageManager.loadImageWithCache(question.media.src).catch(() => {});
+    } else if (question.media.type === 'images') {
+      question.media.src.slice(0, 2).forEach(src => {
+        imageManager.loadImageWithCache(src).catch(() => {});
+      });
+    } else if (question.media.type === 'audio') {
+      audioManager.loadAudio(question.media.src).catch(() => {});
+    }
+  });
+}
 
-  scores.forEach((s,i)=>{
+function renderPlayers() {
+  const p = document.getElementById('players');
+  p.innerHTML = '';
+
+  scores.forEach((s, i) => {
     const div = document.createElement('div');
     div.className = 'player';
 
@@ -277,7 +565,6 @@ function renderPlayers(){
       </div>
     `;
 
-    // обработчики
     div.querySelector('.ok').onclick = () => {
       scores[i] += currentPrice;
       renderPlayers();
@@ -297,88 +584,139 @@ function renderPlayers(){
   });
 }
 
-
-let currentPrice=0;
-let catAudio = new Audio('media/cat.mp3');
-function selectQuestion(cell,q){
+function selectQuestion(cell, q) {
   cell.classList.add('used');
-  currentPrice=q.price;
+  currentPrice = q.price;
 
-  if(Math.random()<0.15){
-    pendingQuestion=q;
-    catAudio.currentTime = 0;
-    catAudio.play();
-    document.getElementById('catScreen').style.display='flex';
-  }else{
+  if (Math.random() < 0.15) {
+    pendingQuestion = q;
+    // Воспроизводим cat.mp3 через аудио менеджер
+    audioManager.playAudio('media/cat.mp3').then(() => {
+      document.getElementById('catScreen').style.display = 'flex';
+    });
+  } else {
     openQuestion(q);
   }
 }
 
-function continueCat(){
-  catAudio.pause();
-  catAudio.currentTime = 0;
-  document.getElementById('catScreen').style.display='none';
-  openQuestion(pendingQuestion);
+function continueCat() {
+  audioManager.stopAudio();
+  document.getElementById('catScreen').style.display = 'none';
+  
+  if (pendingQuestion) {
+    openQuestion(pendingQuestion);
+    pendingQuestion = null;
+  }
 }
 
-function openQuestion(q){
-  document.getElementById('questionText').textContent=q.question;
-  document.getElementById('answerText').textContent=q.answer;
-  document.getElementById('answerText').style.display='none';
+async function openQuestion(q) {
+  document.getElementById('questionText').textContent = q.question;
+  document.getElementById('answerText').textContent = q.answer;
+  document.getElementById('answerText').style.display = 'none';
 
-  const m=document.getElementById('mediaBox');
-  m.innerHTML='';
-  activeMedia=null;
+  const mediaBox = document.getElementById('mediaBox');
+  mediaBox.innerHTML = '';
 
-  if(q.media){
-    if(q.media.type==='images'){
-      m.innerHTML=`<div class="media-images">${q.media.src.map(s=>`<img src="${s}">`).join('')}</div>`;
-    }
+  if (q.media) {
     if (q.media.type === 'image') {
       mediaBox.innerHTML = `
         <div class="media-image">
-          <img src="${q.media.src}">
+          <img data-src="${q.media.src}" 
+               src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600' viewBox='0 0 800 600'%3E%3Crect width='800' height='600' fill='%2313235c'/%3E%3C/svg%3E"
+               class="loading">
         </div>`;
-    }
-    if(q.media.type==='audio'){
-      activeMedia=document.createElement('audio');
-      activeMedia.src=q.media.src;
-      activeMedia.controls=true;
-      activeMedia.autoplay=true;
-      m.appendChild(activeMedia);
+      
+      const img = mediaBox.querySelector('img');
+      imageManager.observeImage(img);
+    } else if (q.media.type === 'images') {
+      const imagesHTML = q.media.src.map(src => `
+        <img data-src="${src}"
+             src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='500' height='500' viewBox='0 0 500 500'%3E%3Crect width='500' height='500' fill='%2313235c'/%3E%3C/svg%3E"
+             class="loading">
+      `).join('');
+      
+      mediaBox.innerHTML = `<div class="media-images">${imagesHTML}</div>`;
+      
+      // Начинаем загрузку всех изображений
+      mediaBox.querySelectorAll('img').forEach(img => {
+        imageManager.observeImage(img);
+      });
+    } else if (q.media.type === 'audio') {
+      mediaBox.innerHTML = `
+        <div class="custom-audio-player">
+          <button onclick="playQuestionAudio()">▶ Воспроизвести</button>
+          <button onclick="pauseQuestionAudio()">⏸ Пауза</button>
+        </div>`;
+      
+      // Лениво загружаем аудио
+      window.currentQuestionAudio = q.media.src;
     }
   }
 
-  document.getElementById('questionModal').style.display='flex';
+  document.getElementById('questionModal').style.display = 'flex';
 }
 
-function showAnswer(){
-  document.getElementById('answerText').style.display='block';
+// Глобальные функции для управления аудио вопроса
+async function playQuestionAudio() {
+  if (window.currentQuestionAudio) {
+    const audio = await audioManager.playAudio(window.currentQuestionAudio, false);
+    if (audio) {
+      audio.play().catch(e => console.error('Ошибка воспроизведения:', e));
+    }
+  }
 }
 
-function closeQuestion(){
-  if(activeMedia){activeMedia.pause();activeMedia.currentTime=0;}
-  document.getElementById('questionModal').style.display='none';
+function pauseQuestionAudio() {
+  audioManager.stopAudio();
+}
+
+function showAnswer() {
+  document.getElementById('answerText').style.display = 'block';
+  // Останавливаем аудио при показе ответа
+  audioManager.stopAudio();
+}
+
+function closeQuestion() {
+  audioManager.stopAudio();
+  document.getElementById('questionModal').style.display = 'none';
+  window.currentQuestionAudio = null;
 }
 
 /* SPONSOR */
-function showSponsor(){
-  document.getElementById('sponsorModal').style.display='flex';
+function showSponsor() {
+  document.getElementById('sponsorModal').style.display = 'flex';
 }
-function closeSponsor(){
-  document.getElementById('sponsorModal').style.display='none';
+
+function closeSponsor() {
+  document.getElementById('sponsorModal').style.display = 'none';
 }
 
 /* INTRO */
-function showIntro(){
-  introAudio=new Audio('media/intro.mp3');
-  introAudio.play();
-  document.getElementById('introModal').style.display='flex';
+async function showIntro() {
+  document.getElementById('introModal').style.display = 'flex';
+  
+  // Ленивая загрузка и воспроизведение intro.mp3
+  try {
+    await audioManager.playAudio('media/intro.mp3');
+  } catch (error) {
+    console.warn('Не удалось воспроизвести интро:', error);
+  }
 }
-function closeIntro(){
-  if(introAudio){introAudio.pause();introAudio.currentTime=0;}
-  document.getElementById('introModal').style.display='none';
+
+function closeIntro() {
+  audioManager.stopAudio();
+  document.getElementById('introModal').style.display = 'none';
 }
+
+// Очистка при закрытии страницы
+window.addEventListener('beforeunload', () => {
+  audioManager.cleanup();
+});
+
+// Предзагрузка при первом взаимодействии
+document.addEventListener('click', () => {
+  audioManager.preloadCriticalAudios();
+}, { once: true });
 </script>
 
 </body>
